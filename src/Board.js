@@ -1,4 +1,5 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 import Dragula from 'dragula';
 import 'dragula/dist/dragula.css';
 import Swimlane from './Swimlane';
@@ -13,7 +14,11 @@ export default class Board extends React.Component {
         backlog: clients.filter(client => !client.status || client.status === 'backlog'),
         inProgress: clients.filter(client => client.status && client.status === 'in-progress'),
         complete: clients.filter(client => client.status && client.status === 'complete'),
-      }
+      },
+      laneFrom: -1,
+      laneTo: -1,
+      rowFrom: -1,
+      rowTo: -1
     }
     this.swimlanes = {
       backlog: React.createRef(),
@@ -55,6 +60,59 @@ export default class Board extends React.Component {
       <Swimlane name={name} clients={clients} dragulaRef={ref}/>
     );
   }
+
+  getDOMIndex = (el) => {
+    return Array.from(el.parentNode.children).indexOf(el);
+  };
+
+  componentDidMount = () => {
+    this.drake = Dragula([
+      ReactDOM.findDOMNode(this.swimlanes.backlog.current),
+      ReactDOM.findDOMNode(this.swimlanes.inProgress.current),
+      ReactDOM.findDOMNode(this.swimlanes.complete.current)
+    ]);
+
+    this.drake.on("drag", (el, source) => {
+      // el was lifted from source
+      this.setState({rowFrom: this.getDOMIndex(el)});
+    });
+    
+    this.drake.on('drop', (el, target, source, sibling) => {
+      // el was dropped into target before a sibling element, and originally came from source
+      this.setState({laneFrom: this.getDOMIndex(source.parentNode.parentNode)});
+      this.setState({laneTo: this.getDOMIndex(target.parentNode.parentNode)});
+      this.setState({rowTo : this.getDOMIndex(el)});
+
+      const clientsFromKey = Object.keys(this.state.clients)[this.state.laneFrom];
+      let clientsFromCopy = [...this.state.clients[clientsFromKey]];
+
+      let item = clientsFromCopy.splice(this.state.rowFrom, 1)[0];
+      const clientsToKey = Object.keys(this.state.clients)[this.state.laneTo];
+      
+      if (clientsFromKey === clientsToKey) {
+        clientsFromCopy.splice(this.state.rowTo, 0, item);
+        this.setState({ clients: { ...this.state.clients, [clientsFromKey]: clientsFromCopy } });
+      } else {
+        clientsToKey === 'inProgress' ? item.status = 'in-progress' : item.status = clientsToKey;
+        let clientsToCopy = [...this.state.clients[clientsToKey]];
+        clientsToCopy.splice(this.state.rowTo, 0, item);
+
+        this.setState(prevState => {
+              return (
+                { clients: { ...prevState.clients, [clientsFromKey]: prevState.clients[clientsFromKey].filter(client => client.id !== item.id) } }
+              );
+            } 
+          ); //this line blows
+        this.setState({ clients: { ...this.state.clients, [clientsToKey]: clientsToCopy } });
+      }
+      
+    });
+
+  };
+
+  componentWillUnmount = () => {
+    this.drake.destroy();
+  };
 
   render() {
     return (
